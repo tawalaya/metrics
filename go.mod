@@ -46,7 +46,3 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gotest.tools/v3 v3.1.0 // indirect
 )
-
-replace (
-	github.com/ISE-SMILE/corral v0.2.0 => ../corral
-)

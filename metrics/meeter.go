@@ -19,9 +19,12 @@ type Metrics struct {
 	ctx      context.Context
 	interval time.Duration
 
-	server      *http.Server
-	nodeMetrics map[string]*NodeStats
-	metrics     *api.Metrics
+	server         *http.Server
+	nodeMetrics    map[string]*NodeStats
+	metrics        *api.Metrics
+	dockerPort     int
+	prometheusPort int
+	logDocker      bool
 }
 
 const dockerMetricsPort = 2376
@@ -58,7 +61,11 @@ var header = map[string]string{
 	"docker_total":   "total number of docker containers",
 }
 
-func (m *Metrics) Setup(metrics *api.Metrics) error {
+//Setup sets up the metrics collector, if metrics is not nil, it will be used and populated with the nassesary defaults.
+//logDockerInfo tells the collector if we should collect docker information
+//dockerPort is the port the docker api is running on
+//prometheusPort is the port the prometheus api is running on
+func (m *Metrics) Setup(metrics *api.Metrics, logDockerInfo bool, dockerPort *int, prometheusPort *int) error {
 	if metrics != nil {
 
 		metrics, err := api.CollectMetrics(header)
@@ -76,22 +83,39 @@ func (m *Metrics) Setup(metrics *api.Metrics) error {
 			}
 		}
 	}
+
+	if dockerPort != nil {
+		m.dockerPort = *dockerPort
+	} else {
+		m.dockerPort = dockerMetricsPort
+	}
+
+	if prometheusPort != nil {
+		m.prometheusPort = *prometheusPort
+	} else {
+		m.prometheusPort = nodeMetricsPort
+	}
+	m.logDocker = logDockerInfo
+
 	return nil
 }
 
-func (m *Metrics) Collect(duration time.Duration, filter filters.Args) error {
-	m.interval = duration
+//Collect starts the data collection, interval defines the time between each metrics pull, filter is used to filter the results of the docker api
+func (m *Metrics) Collect(interval time.Duration, filter filters.Args) error {
+	m.interval = interval
 
 	errors := make(chan error)
 
 	nodeMetrics := make(chan NodeMetrics)
 	dockerMetrics := make(chan DockerMetrics)
 	for _, node := range m.nodes {
-		go prometheusCollector(m.ctx, node, fmt.Sprintf("http://%s:%d/metrics", node, nodeMetricsPort),
-			nodeMetrics, errors, nodeFields(), duration)
+		go prometheusCollector(m.ctx, node, fmt.Sprintf("http://%s:%d/metrics", node, m.prometheusPort),
+			nodeMetrics, errors, nodeFields(), interval)
 
-		go dockerCollector(m.ctx, node, fmt.Sprintf("http://%s:%d", node, dockerMetricsPort),
-			dockerMetrics, errors, filter, duration)
+		if m.logDocker {
+			go dockerCollector(m.ctx, node, fmt.Sprintf("http://%s:%d", node, m.dockerPort),
+				dockerMetrics, errors, filter, interval)
+		}
 	}
 
 	if m.metrics == nil {

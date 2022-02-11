@@ -19,12 +19,21 @@ var name string
 var timeout time.Duration = time.Duration(-1)
 var interval time.Duration = time.Second
 
+var dockerPort int
+var prometheusPort int
+var logDocker bool
+
 func main() {
 	flag.StringVar(&Nodes, "nodes", Nodes, "Nodes to connect to")
 
 	flag.StringVar(&name, "name", "", "file name to write out or empty")
 	flag.DurationVar(&timeout, "timeout", timeout, "timeout before stopping to collect data, -1 means no timeout")
 	flag.DurationVar(&interval, "interval", interval, "interval between collecting data")
+
+	flag.IntVar(&dockerPort, "dport", 2376, "docker port")
+	flag.IntVar(&prometheusPort, "pport", 9100, "prometheus port")
+	flag.BoolVar(&logDocker, "docker", true, "collect docker metrics")
+
 	flag.Parse()
 
 	if name != "" {
@@ -57,7 +66,12 @@ func main() {
 	}()
 
 	c := collector.New(ctx, workerNodes)
-	err := c.Collect(interval, filters.Args{})
+	err := c.Setup(nil, logDocker, &dockerPort, &prometheusPort)
+	if err != nil {
+		panic(err)
+	}
+
+	err = c.Collect(interval, filters.Args{})
 	if err != nil {
 		log.Printf("failed to collect metrics: %v", err)
 		return
